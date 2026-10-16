@@ -8,16 +8,27 @@ from mcp.server.transport_security import TransportSecuritySettings
 EMAIL = "24f2003780@ds.study.iitm.ac.in"
 challenge_var = contextvars.ContextVar("challenge", default=None)
 
+security = TransportSecuritySettings(
+    enable_dns_rebinding_protection=True,
+    allowed_hosts=[
+        "mcp-challenge-wau0.onrender.com",
+        "mcp-challenge-wau0.onrender.com:*",
+    ],
+)
+
 mcp = FastMCP(
     "Exam Challenge",
     stateless_http=True,
     json_response=True,
+    transport_security=security,
 )
+
 
 @mcp.tool()
 def solve_challenge() -> str:
     """Return the hash for the current exam challenge header."""
     challenge = challenge_var.get()
+
     if not challenge:
         raise ValueError("Missing X-Exam-Challenge")
 
@@ -38,21 +49,14 @@ class HeaderMiddleware:
             for k, v in scope.get("headers", [])
         }
 
-        token = challenge_var.set(headers.get("x-exam-challenge"))
+        token = challenge_var.set(
+            headers.get("x-exam-challenge")
+        )
+
         try:
             await self.app(scope, receive, send)
         finally:
             challenge_var.reset(token)
 
 
-security = TransportSecuritySettings(
-    enable_dns_rebinding_protection=True,
-    allowed_hosts=[
-        "mcp-challenge-wau0.onrender.com",
-        "mcp-challenge-wau0.onrender.com:*",
-    ],
-)
-
-app = HeaderMiddleware(
-    mcp.streamable_http_app(transport_security=security)
-)
+app = HeaderMiddleware(mcp.streamable_http_app())
